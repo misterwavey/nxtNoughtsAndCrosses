@@ -3,11 +3,6 @@
 ;   uses Next Mailbox Protocol 0.1
 ;
 ;
-;       o|x|o  
-;      --+-+--
-;       o|x|x
-;      --+-+--
-;       o|x|o
 
 ; request:
 ; protocol maj=0 min=1
@@ -41,40 +36,69 @@ NXREG_TURBO_CTL         equ $07                         ; set CPU speed
 CPU_28                  equ 11b                         ; 11b = 28MHz
 
 ; Next Mailbox Protocol
-MBOX_STATUS_OK          equ 0                           ;
-MBOX_STATUS_INV_PROTO   equ 1                           ;
-MBOX_STATUS_INV_CMD     equ 2                           ;
-MBOX_STATUS_INV_APP     equ 3                           ;
-MBOX_STATUS_INV_USERID  equ 4                           ;
-MBOX_STATUS_INV_LENGTH  equ 5                           ;
-MBOX_STATUS_INT_ERR     equ 6                           ;
-MBOX_STATUS_MISS_NICK   equ 7                           ;
-MBOX_STATUS_MISS_MSG    equ 8                           ;
-MBOX_STATUS_UNIMPL      equ 9                           ;
-MBOX_STATUS_MISS_MSG_ID equ 10                          ;
+MBOX_CMD_REGISTER                   equ 1
+MBOX_CMD_CHECK_REGISTERED_NICKNAME  equ 2
+MBOX_CMD_SEND_MESSAGE               equ 3
+MBOX_CMD_MESSGAGE_COUNT             equ 4
+MBOX_CMD_GET_MESSAGE                equ 5
+MBOX_CMD_JOIN_POOL                  equ 6 
+MBOX_CMD_GET_POOL                   equ 7 
 
-MBOX_STATUS_USR_ALR_REG equ 101                         ;
-MBOX_STATUS_UNREG_NICK  equ 102                         ;
-MBOX_STATUS_UNK_USERID  equ 103                         ;
-MBOX_STATUS_UNREG_USER  equ 104                         ;
+MBOX_STATUS_OK                      equ 0
+MBOX_STATUS_INVALID_PROTOCOL        equ 1
+MBOX_STATUS_INVALID_CMD             equ 2
+MBOX_STATUS_INVALID_APP             equ 3
+MBOX_STATUS_INVALID_USERID          equ 4
+MBOX_STATUS_INVALID_LENGTH          equ 5
+MBOX_STATUS_INTERNAL_ERROR          equ 6
+MBOX_STATUS_MISSING_NICKNAME        equ 7
+MBOX_STATUS_MISSING_MESSAGE         equ 8
+MBOX_STATUS_UNIMPLEMENTED           equ 9
+MBOX_STATUS_MISSING_MESSAGE_ID      equ 10
+MBOX_STATUS_MISSING_POOL_SIZE       equ 11
+MBOX_STATUS_MISSING_POOL_ID         equ 12
 
-MBOX_STATUS_REGISTER_OK equ 201                         ;
-MBOX_STATUS_COUNT_OK    equ 202                         ;
-MBOX_STATUS_GET_MSG_OK  equ 203                         ;
-MBOX_STATUS_INV_MSG_ID  equ 204                         ;
+MBOX_STATUS_USER_ALREADY_REGISTERED equ 101
+MBOX_STATUS_UNREGISTERED_NICKNAME   equ 102
+MBOX_STATUS_UNKNOWN_USERID          equ 103
+MBOX_STATUS_UNREGISTERED_USERID     equ 104
+MBOX_STATUS_UNKNOWN_POOL_ID         equ 105
 
-MBOX_CMD_REGISTER       equ 1                           ;
-MBOX_CMD_CHECK_REG_NICK equ 2                           ;
-MBOX_CMD_SEND_MESSAGE   equ 3                           ;
-MBOX_CMD_MESSAGE_COUNT  equ 4                           ;
-MBOX_CMD_GET_MESSAGE    equ 5                           ;
-MBOX_CMD_GET_RAND_USERS equ 6                           ; # ?
-MBOX_CMD_AWAIT_USERS    equ 7                           ; # session / group?
-
+MBOX_STATUS_REGISTER_OK             equ 201
+MBOX_STATUS_COUNT_OK                equ 202
+MBOX_STATUS_GET_MESSAGE_OK          equ 203
+MBOX_STATUS_INVALID_MESSAGE_ID      equ 204
+MBOX_STATUS_JOINED_POOL             equ 205
+MBOX_STATUS_INVALID_POOLSIZE        equ 206
+MBOX_STATUS_ALREADY_JOINED_POOL     equ 207
+MBOX_STATUS_POOL_UNFILLED           equ 208
+MBOX_STATUS_POOL_FILLED             equ 209
 
 
 org                     $8000                           ; This should keep our code clear of NextBASIC sysvars
                         ;                                 (Necessary for making NextZXOS API calls);
+
+;    connect
+;    get msg count 
+;    if not reg
+;      reg
+;      join pool
+;    else if no msgs (because unfilled)
+;      get pool (ie return the pool we're in)
+;      if unfilled    
+;        show waiting for player
+;    else if msg shows game finished
+;      show finished
+;      ask to restart/join pool
+;    else if not finished
+;      draw state
+;      if our move
+;        get move
+;        send move
+;      else 
+;        show waiting for player
+;      
+
 ;
 ; main loop
 ;
@@ -82,21 +106,159 @@ Main                    proc                            ;
                         di                              ;
                         nextreg NXREG_TURBO_CTL, CPU_28 ; Next Turbo Control Register to set cpu speed
                         call MakeCIPStart               ; setup comms to server
-
                         call SetupScreen                ;
-                        call LoadFile                   ; obtain any previously saved userid and register userid with server
-                        call DisplayMenu                ;
-                        call DisplayStatus              ;
-MainLoop                call HandleMenuChoice           ;
 
-                        jp MainLoop                     ;
+Loop                    call HandleCount                ; count messages, setting carry if unregistered
+                        jp c, NotRegistered             ; if carry set, we're unregistered
+                        ld a, (MSG_COUNT)
+                        cp 0
+                        jp z, NoMessages
+                        call ProcessLatestMessage
+                        ld a, (IS_GAME_FINISHED)
+                        jp z, Finished
+                        call ShowState
+                        ld a, (IS_OUR_TURN)
+                        cp 0
+                        jp nz, ShowWaitingForMove
+                        call GetMove
+                        call SendMove
+                        jp Loop
+
+NotRegistered           call HandleRegister            ; 
+                        jp Loop
+
+NoMessages              call GetPool
+                        jp Loop
+
+Finished                call ShowState
+                        jp Loop
+
+ShowWaitingForMove      nop
+                        jp Loop
+
+ProcessLatestMessage    call GetLatestMessage    
+                        call ProcessMessage
+                        ret                        
+
+GetLatestMessage        ld hl, (MSG_COUNT)
+                        ld (MBOX_MSG_ID), hl
+                        call HandleGetMessage
+                        ret
+; move
+; 1    000 000 001
+ProcessMessage          
 pend
+
+;       o|x|o    1|2|3  
+;      --+-+--  --+-+--
+;       o|x|x    4|5|6
+;      --+-+--  --+-+--
+;       o|x|o    7|8|9
 
 ;
 ; end of main
 ;
 
+;
+; join pool
+;
+JoinPool                ld a, MBOX_CMD_JOIN_POOL        ;
+                        call BuildJoinPoolRequest       ;                                         
+                        ld de, REQUESTBUF               ; 
+                        ld h, 0                         ;
+                        ld l, 2+1+1+20+1                  ; proto+cmd+app+userid+poolsize
+                        call MakeCIPSend                ;
+                        call ProcessJoinPoolResponse    ;
+                        ret                             ;
+; BuildStandardRequest
+;
+; ENTRY
+;  A = MBOX CMD
+; EXIT
+;  REQUESTBUF is populated ready for CIPSEND
+;
+BuildJoinPoolRequest        ld (MBOX_CMD), a                ;
+                        ld de, REQUESTBUF               ; entire server request string
+                        WriteString(MBOX_PROTOCOL_BYTES, 2);
+                        WriteString(MBOX_CMD, 1)        ;
+                        WriteString(MBOX_APP_ID, 1)     ; 1=nextmail
+                        WriteString(MBOX_USER_ID,20)    ; userid
+                        WriteString(POOL_SIZE, 1)
+                        ret                             ;
 
+ProcessJoinPoolResponse proc
+                        ld hl, (ResponseStart)          ;
+                        ld a, (hl)                      ;
+                        cp MBOX_STATUS_UNREG_USER ; 104
+                        jp z, Problem             ;
+                        cp MBOX_STATUS_MISSING_POOLID; 205
+                        jp z, Problem
+                        cp MBOX_STATUS_POOL_UNFILLED ;208
+                        jp z, Unfilled
+                        cp MBOX_STATUS_POOL_FILLED ;209
+                        jp Filled
+                        jp Problem
+Unfilled                inc hl                          ; move past status
+                        ld a, (hl)                      ; get count
+                        ld (POOL_ID), a               ; store
+                        inc hl                          ; get 2nd byte
+                        ld a, (hl)                      ;
+                        ld (POOL_ID+1), a             ; store 2nd
+                        ret
+
+Problem                 PrintLine(0,7,MSG_JOIN_FAIL, MSG_JOIN_FAIL_LEN)
+                        call PressKeyToContinue
+                        ret
+pend
+
+;
+; get pool
+;
+GetPool                 ld a, MBOX_CMD_JOIN_POOL        ;
+                        call BuildGetPoolRequest       ;                                         
+                        ld de, REQUESTBUF               ; 
+                        ld h, 0                         ;
+                        ld l, 2+1+1+20                  ; proto+cmd+app+userid+poolsize
+                        call MakeCIPSend                ;
+                        call ProcessGetPoolResponse    ;
+                        ret                             ;
+; BuildStandardRequest
+;
+; ENTRY
+;  A = MBOX CMD
+; EXIT
+;  REQUESTBUF is populated ready for CIPSEND
+;
+BuildGetPoolRequest     ld (MBOX_CMD), a                ;
+                        ld de, REQUESTBUF               ; entire server request string
+                        WriteString(MBOX_PROTOCOL_BYTES, 2);
+                        WriteString(MBOX_CMD, 1)        ;
+                        WriteString(MBOX_APP_ID, 1)     ; 1=nextmail
+                        WriteString(MBOX_USER_ID,20)    ; userid
+                        ret                             ;
+
+ProcessGetPoolResponse  proc
+                        ld hl, (ResponseStart)          ;
+                        ld a, (hl)                      ;
+                        cp MBOX_STATUS_UNREG_USER ; 104
+                        jp z, Problem             ;
+                        cp MBOX_STATUS_JOINED_POOL; 205
+                        jp z, Joined
+                        cp MBOX_STATUS_ALREADY_JOINED_POOL ;207
+                        jp z, Joined
+                        jp Problem
+Joined                  inc hl                          ; move past status
+                        ld a, (hl)                      ; get count
+                        ld (POOL_ID), a               ; store
+                        inc hl                          ; get 2nd byte
+                        ld a, (hl)                      ;
+                        ld (POOL_ID+1), a             ; store 2nd
+                        ret
+
+Problem                 PrintLine(0,7,MSG_JOIN_FAIL, MSG_JOIN_FAIL_LEN)
+                        call PressKeyToContinue
+                        ret
+pend
 
 ;
 ; setup screen
@@ -125,60 +287,6 @@ ClearLoop               PrintChar(' ')                  ;
                         jp nz ClearLoop                 ;
                         ret                             ;
 
-;
-; display main menu
-;
-DisplayMenu             call DrawMenuBox                ;
-                        PrintLine(1,1,MENU_LINE_1,MENU_LINE_1_LEN) ;
-                        ret                             ;
-;
-; show connected, nick, message counts
-;
-DisplayStatus           PrintLine(0,21,BLANK_ROW,51)    ;
-                        PrintLine(0,22,BLANK_ROW,51)    ;
-                        PrintLine(0,23,BLANK_ROW,51)    ;
-                        PrintLine(0,21,CONNECTED_TO, CONNECTED_TO_LEN);
-                        PrintLine(0+CONNECTED_TO_LEN,21,MboxHost,MboxHostLen) ;
-                        ld a, (CONNECTED)               ;
-                        cp 1                            ;
-                        jp z, PrintConnected            ;
-                        PrintLine(MboxHostLen+1,18,OFFLINE,OFFLINE_LEN);
-                        ret                             ;   bail because we're offline
-PrintConnected          PrintLine(0,22,MSG_NICK,MSG_NICK_LEN) ;
-                        PrintLineLenVar(0+MSG_NICK_LEN,22,MBOX_NICK, MBOX_NICK_LEN) ;
-                        PrintLine(0,23,MESSAGES,MESSAGES_LEN);
-                        PrintLine(49-VERSION_LEN,23,VERSION,VERSION_LEN);
-                        ld hl,MSG_COUNT                 ;
-                        inc (hl)                        ;
-                        dec (hl)                        ; 
-                        jp z, PrintZeroMessages         ; don't convert message count to ascii if zero (ldir uses len in BC)
-                        ld hl, (MSG_COUNT)              ;
-                        call ConvertWordToAsc           ; otherwise convert number to ascii: text in WordStart, length in WordLen
-                        ld bc, (WordLen)                ; fill MSG_COUNT_BUF with the ascii number
-                        ld de, MSG_COUNT_BUF            ;
-                        ld hl, (WordStart)              ;
-                        ldir                            ;
-                        PrintLineLenVar(0+MESSAGES_LEN,23,MSG_COUNT_BUF,WordLen) ;
-                        ret                             ;
-PrintZeroMessages       PrintLine(0+MESSAGES_LEN,23,MSG_COUNT_ZERO,1);
-                        ret                             ;
-
-
-; HandleMenuChoice
-;
-HandleMenuChoice        call ROM_KEY_SCAN               ;
-                        inc d                           ; no shiftkey = ff
-                        ret nz                          ; ignore shifted key combos
-                        ld a,e                          ; a: = key code of key pressed (ff if none).
-                        cp $24                          ; check for 1 key
-                        jp z, HandleRegister            ;
-                        cp $1c                          ; check for 2 key
-                        jp z, HandleSend                ;
-                        cp $14                          ; check for 3 key
-                        jp z, HandleViewMessage         ;
-                        cp $0c                          ; check for 4 key
-                        jp z, HandleCount               ;
-                        ret                             ;
 HandleRegister          PrintLine(0,7,REG_PROMPT, REG_PROMPT_LEN) ;
                         PrintLine(0,8,PROMPT, PROMPT_LEN) ;
                         call WipeUserId                 ;
@@ -188,7 +296,6 @@ HandleRegister          PrintLine(0,7,REG_PROMPT, REG_PROMPT_LEN) ;
                         call RegisterUserId             ;
                         call PressKeyToContinue         ;
 RegBreak                call ClearCentre                ;
-                        call HandleCount                ; also displays status
                         ret                             ;
 ;
 ; copy buffer into fixed location
@@ -275,22 +382,85 @@ HandleCount             ld a, MBOX_CMD_MESSAGE_COUNT    ;
                         ld l, 2+1+1+20                  ; proto+cmd+app+userid
                         call MakeCIPSend                ;
                         call ProcessMsgCountResponse    ;
-                        call DisplayStatus              ;
-
                         ret                             ;
 
-ProcessMsgCountResponse ld hl, (ResponseStart)          ;
+ProcessMsgCountResponse proc
+                        ld hl, (ResponseStart)          ;
                         ld a, (hl)                      ;
-                        cp MBOX_STATUS_COUNT_OK         ;
-                        jp nz, PrintProblem             ;
+                        cp MBOX_STATUS_UNREG_USER         ;
+                        jp z, Problem             ;
+                        cp MBOX_STATUS_COUNT_OK
+                        jp nz, Problem
                         inc hl                          ; move past status
                         ld a, (hl)                      ; get count
                         ld (MSG_COUNT), a               ; store
                         inc hl                          ; get 2nd byte
                         ld a, (hl)                      ;
                         ld (MSG_COUNT+1), a             ; store 2nd
+                        scf
+                        ccf                             ; carry is clear on exit when ok
                         ret                             ;
-PrintProblem            PrintLine(6,21,BAD_USER_MSG, BAD_USER_MSG_LEN) ;
+Problem                 scf                             ; carry is set on exit when not ok
+                        ret                             ;
+pend
+
+; 4. getMessage
+;
+; response:
+;
+; pos:      | 0      | 1          | 21         | 23         |
+; size:     | 1      | 20         | 2          | n          |
+; field:    | status | senderNick | messagelen | message    |
+; condition |        |              status=203              |
+;
+HandleGetMessage        ld a, MBOX_CMD_GET_MESSAGE      ;
+                        call BuildGetMsgRequest         ;
+                        ld h, 0                         ;
+                        ld l, 2+1+1+20+2                ; 2x_proto+cmd+app+userid+2x_msg_id
+                        ld de, REQUESTBUF               ;
+                        call MakeCIPSend                ;
+                        call ProcessGetResponse         ;
+                        call PressKeyToContinue         ;
+                        call ClearCentre                ;
+                        call DisplayStatus              ;
+
+                        ret                             ;
+
+
+BuildGetMsgRequest      ld (MBOX_CMD), a                ;
+                        ld de, REQUESTBUF               ; entire server request string
+                        WriteString(MBOX_PROTOCOL_BYTES, 2);
+                        WriteString(MBOX_CMD, 1)        ; cmd is get message by id
+                        WriteString(MBOX_APP_ID, 1)     ; 1=nextmail
+                        WriteString(MBOX_USER_ID,20)    ; userid
+                        WriteString(MBOX_MSG_ID,2)      ; param 1 is msg id
+                        ret                             ;
+
+ProcessGetResponse      ld hl, (ResponseStart)          ;  status byte
+                        ld a, (hl)                      ;
+                        cp MBOX_STATUS_GET_MSG_OK       ; is it ok?
+                        jp nz, PrintBadMsgId            ; no - show error
+                        inc hl                          ; yes - move past status byte into sender's nick
+                        ld de, IN_NICK                  ; will hold our copy of the msg sender's nick
+                        ld bc, 20                       ;
+                        ldir                            ;
+                        push hl                         ; hl pointing after nick
+                        ld de, IN_NICK_LEN              ;
+                        ld hl, IN_NICK                  ;
+                        call CalcNickLength             ;
+                        pop hl                          ; pointing at msg len
+                        ld a, (hl)                      ; this is msg len
+                        ld (IN_MSG_LEN), a              ;
+                        ld de, IN_MESSAGE               ; populate in_messge with contents of response
+                        inc hl                          ; move past len byte into start of msg
+                        ld bc, (IN_MSG_LEN)             ;
+                        ldir                            ;
+                        PrintLine(0,10,MSG_FROM,MSG_FROM_LEN);
+                        PrintLineLenVar(0+MSG_FROM_LEN,10,IN_NICK,IN_NICK_LEN);
+                        PrintLineLenVar(0,12,IN_MESSAGE,IN_MSG_LEN);
+                        ret                             ;
+
+PrintBadMsgId           PrintLine(0,15,BAD_MSG_ID,BAD_MSG_ID_LEN) ;
                         ret                             ;
 
 ;                                                              ;
@@ -341,8 +511,6 @@ KeyLoop                 call ROM_KEY_SCAN               ; d=modifier e=keycode o
                         ret nz                          ; yes, return
                         jp KeyLoop                      ; otherwise continue to check for input
 
-BAD_MSG_ID              defb "bad message number"       ;
-BAD_MSG_ID_LEN          equ $-BAD_MSG_ID                ;
 BAD_USER_MSG            defb "<no user registered>"     ;
 BAD_USER_MSG_LEN        equ $-BAD_USER_MSG              ;
 Buffer:                 ds 256                          ;
@@ -351,9 +519,6 @@ BUFLEN                  defs 1                          ;
 CONNECTED               defb 00                         ;
 CONNECTED_TO            defb "Connected to "            ;
 CONNECTED_TO_LEN        equ $-CONNECTED_TO              ;
-DIR_NAME                defb "/nxtMail2",0              ;
-FILEBUF                 defs 128                        ;
-FILE_NAME               defb "/nxtMail2/nxtMail.dat",0  ;
 HYPHEN                  defb '-'                        ;
 IN_MESSAGE              defs 200                        ;
 IN_MSG_LEN              defb 0,0                        ; 2 because we'll point BC at it for ldir
@@ -371,25 +536,17 @@ MBOX_NICK               defs 20                         ;
 MBOX_NICK_LEN           defb 00,00                      ;
 MBOX_PROTOCOL_BYTES     defb $00, $01                   ;
 MBOX_USER_ID            defs 20                         ; the one used for transmission to allow the working buffer to be reset
-MENU_LINE_1             defb "1. Connect/Register userId" ;
-MENU_LINE_1_LEN         equ $-MENU_LINE_1               ;
 MSG_ERR_SENDING         defb "Error sending message"    ;
 MSG_ERR_SENDING_LEN     equ $-MSG_ERR_SENDING           ;
-MSG_GET_MSG_PROMPT      defb "Message body: (200 max. Enter to end)";
-MSG_GET_MSG_PROMPT_LEN  equ $-MSG_GET_MSG_PROMPT        ;
-MSG_FROM                defb "From: "                   ;
-MSG_FROM_LEN            equ $-MSG_FROM                  ;
-MSG_ID_BUF              defs 5,' '                      ; '1'-'65535'
-MSG_ID_BUF_LEN          defb 0                          ; length of the digits entered 1-5
-MSG_ID_PROMPT           defb "Message number (1-65535. Enter to end)" ;
-MSG_ID_PROMPT_LEN       equ $-MSG_ID_PROMPT             ;
+MSG_JOIN_FAIL           defb "Failed to join pool"
+MSG_JOIN_FAIL_LEN       equ $-MSG_JOIN_FAIL
 MSG_PRESS_KEY           defb "Press any key to continue";
 MSG_PRESS_KEY_LEN       equ $-MSG_PRESS_KEY             ;
-MSG_UNREG_NICK          defb "Nick is unregistered with NxtMail";
-MSG_UNREG_NICK_LEN      equ $-MSG_UNREG_NICK            ;
 MSG_NICK                defb "Nick: "                   ;
 MSG_NICK_LEN            equ $-MSG_NICK                  ;
 OUT_MESSAGE             ds 200,$09                      ; gets printed so fill with tab (not 0s and not space because users use space)
+POOL_ID                 defb 00,00
+POOL_SIZE               defb 2
 PROMPT                  defb "> "                       ;
 PROMPT_LEN              equ $-PROMPT                    ;
 REG_PROMPT              defb "Enter your Next Mailbox Id (then enter)";
@@ -400,7 +557,7 @@ USER_ID_BUF             defs 20, ' '                    ; our input buffer
 VERSION                 defb "nxtMail v0.4 2020 Tadaguff";
 VERSION_LEN             equ $-VERSION                   ;
 
-T
+
                         include "esp.asm"               ;
                         include "constants.asm"         ;
                         include "msg.asm"               ;
