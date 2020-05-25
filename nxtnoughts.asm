@@ -191,14 +191,12 @@ ProcessJoinPoolResponse proc
                         ld a, (hl)                      ;
                         cp MBOX_STATUS_UNREG_USER ; 104
                         jp z, Problem             ;
-                        cp MBOX_STATUS_MISSING_POOLID; 205
-                        jp z, Problem
-                        cp MBOX_STATUS_POOL_UNFILLED ;208
-                        jp z, Unfilled
-                        cp MBOX_STATUS_POOL_FILLED ;209
-                        jp Filled
+                        cp MBOX_STATUS_JOINED_POOL; 205
+                        jp z, Joined
+                        cp MBOX_STATUS_ALREADY_JOINED_POOL ;207
+                        jp z, Joined
                         jp Problem
-Unfilled                inc hl                          ; move past status
+Joined                  inc hl                          ; move past status
                         ld a, (hl)                      ; get count
                         ld (POOL_ID), a               ; store
                         inc hl                          ; get 2nd byte
@@ -242,18 +240,18 @@ ProcessGetPoolResponse  proc
                         ld a, (hl)                      ;
                         cp MBOX_STATUS_UNREG_USER ; 104
                         jp z, Problem             ;
-                        cp MBOX_STATUS_JOINED_POOL; 205
-                        jp z, Joined
-                        cp MBOX_STATUS_ALREADY_JOINED_POOL ;207
-                        jp z, Joined
+                        cp MBOX_STATUS_MISSING_POOLID; 205
+                        jp z, Problem
+                        cp MBOX_STATUS_POOL_UNFILLED ;208
+                        jp z, Done
+                        cp MBOX_STATUS_POOL_FILLED ;209
+                        jp Filled
                         jp Problem
-Joined                  inc hl                          ; move past status
+
+Filled                  inc hl                          ; move past status
                         ld a, (hl)                      ; get count
-                        ld (POOL_ID), a               ; store
-                        inc hl                          ; get 2nd byte
-                        ld a, (hl)                      ;
-                        ld (POOL_ID+1), a             ; store 2nd
-                        ret
+                        ld b,a                          ; b holds number of nicks
+Done                    ret
 
 Problem                 PrintLine(0,7,MSG_JOIN_FAIL, MSG_JOIN_FAIL_LEN)
                         call PressKeyToContinue
