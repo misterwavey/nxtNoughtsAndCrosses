@@ -127,7 +127,8 @@ Loop                    call HandleCount                ; count messages, settin
 NotRegistered           call HandleRegister            ; 
                         jp Loop
 
-NoMessages              call GetPool
+NoMessages              call JoinPool                   ; returns with every call 
+                        call GetPool                    ; returns unfilled or nick + orders
                         jp Loop
 
 Finished                call ShowState
@@ -177,7 +178,7 @@ JoinPool                ld a, MBOX_CMD_JOIN_POOL        ;
 ; EXIT
 ;  REQUESTBUF is populated ready for CIPSEND
 ;
-BuildJoinPoolRequest        ld (MBOX_CMD), a                ;
+BuildJoinPoolRequest    ld (MBOX_CMD), a                ;
                         ld de, REQUESTBUF               ; entire server request string
                         WriteString(MBOX_PROTOCOL_BYTES, 2);
                         WriteString(MBOX_CMD, 1)        ;
@@ -249,8 +250,40 @@ ProcessGetPoolResponse  proc
                         jp Problem
 
 Filled                  inc hl                          ; move past status
-                        ld a, (hl)                      ; get count
-                        ld b,a                          ; b holds number of nicks
+                        ld a, (hl)                      ; get count of nicks
+                        cp 2
+                        jp nz, Problem                  ; must be 2 - us and them
+                        inc hl                          ; move past nick count
+                        ld a, (hl)                      ; a holds nick1 len
+                        ld b, 0
+                        ld c, a
+                        ld (NICK1_LEN), a
+                        inc hl                          ; move to nick contents
+                        ld de, NICK1
+                        ldir                            ; populate NICK1 with message contents. hl at next nick len
+                        call CheckIfNickIsOurs 
+                        jp nz, TheyGoFirst              ; nick 1 is the opponent, so they go first
+                        ld a, (hl)                      ; nick1 is us. get nick2 len 
+                        ld b, 0
+                        ld c, a
+                        ld (OPPONENT_NICK_LEN), a
+                        inc hl                          ; move to nick2
+                        ld de, OPPONENT_NICK
+                        ldir 
+                        ld a, 1
+                        ld (WE_GO_FIRST), a             ; set WE_GO_FIRST to true
+                        jp Done
+
+TheyGoFirst             ld hl, NICK1
+                        ld de, (OPPONENT_NICK)          ; populate OPPONENT_NICK with NICK1
+                        ld a, (NICK1_LEN)
+                        ld (OPPONENT_NICK_LEN), a
+                        ld b, 0
+                        ld c, a
+                        ldir
+                        ld a, 0
+                        ld (WE_GO_FIRST), a            ; set WE_GO_FIRST to false
+
 Done                    ret
 
 Problem                 PrintLine(0,7,MSG_JOIN_FAIL, MSG_JOIN_FAIL_LEN)
@@ -258,6 +291,35 @@ Problem                 PrintLine(0,7,MSG_JOIN_FAIL, MSG_JOIN_FAIL_LEN)
                         ret
 pend
 
+;
+; compares a nick with our own (MBOX_NICK) with length (MBOX_NICK_LEN)
+; ENTRY
+;   (NICK1)=candidate nick
+;   (NICK1_LEN)=length of nick
+; EXIT
+;   Z set if a match with our nick
+;
+CheckIfNickIsOurs       proc
+                        ld a, (NICK1_LEN)
+                        ld b, a
+                        ld a, (MBOX_NICK_LEN)
+                        cp b
+                        ret nz ; if nicks are not the same length
+
+                        ld hl, MBOX_NICK-1 ; nicks are same length
+                        ld de, NICK1-1
+Loop                    push bc ; current count
+                        inc hl
+                        inc de
+                        ld b, (hl)
+                        ld a, (de)
+                        cp b
+                        pop bc
+                        ret nz ; stop looking if not match
+                        dec b
+                        jp nz,Loop
+                        ret
+pend
 ;
 ; setup screen
 ;
@@ -527,10 +589,10 @@ MboxHostLen             equ $-MboxHost                  ;
 MboxPort:               defb "8361"                     ;
 MboxPortLen:            equ $-MboxPort                  ;
 MBOX_APP_ID             defb $01                        ; nxtmail is app 1 in db
-MBOX_BLANK_NICK         defs 20,' '                     ;
+MBOX_BLANK_NICK         defs 20,' '                     ; 
 MBOX_CMD                defb $01                        ;
 MBOX_MSG_ID             defb 0,0                        ; 2 bytes for 0-65535
-MBOX_NICK               defs 20                         ;
+MBOX_NICK               defs 20                         ; our nick
 MBOX_NICK_LEN           defb 00,00                      ;
 MBOX_PROTOCOL_BYTES     defb $00, $01                   ;
 MBOX_USER_ID            defs 20                         ; the one used for transmission to allow the working buffer to be reset
@@ -542,6 +604,10 @@ MSG_PRESS_KEY           defb "Press any key to continue";
 MSG_PRESS_KEY_LEN       equ $-MSG_PRESS_KEY             ;
 MSG_NICK                defb "Nick: "                   ;
 MSG_NICK_LEN            equ $-MSG_NICK                  ;
+NICK1                   ds 20
+NICK1_LEN               equ $-NICK1
+OPPONENT_NICK           ds 20
+OPPONENT_NICK_LEN       defb 1
 OUT_MESSAGE             ds 200,$09                      ; gets printed so fill with tab (not 0s and not space because users use space)
 POOL_ID                 defb 00,00
 POOL_SIZE               defb 2
@@ -554,7 +620,7 @@ SENDBUF                 defb 255                        ;
 USER_ID_BUF             defs 20, ' '                    ; our input buffer
 VERSION                 defb "nxtMail v0.4 2020 Tadaguff";
 VERSION_LEN             equ $-VERSION                   ;
-
+WE_GO_FIRST             defb 0
 
                         include "esp.asm"               ;
                         include "constants.asm"         ;
