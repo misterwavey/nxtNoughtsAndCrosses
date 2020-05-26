@@ -131,7 +131,9 @@ NoMessages              call JoinPool                   ; returns poolid with ev
                         call GetPool                    ; returns unfilled or nick + orders
                         jp Loop
 
-Finished                call ShowState
+Finished                call ShowFinished
+                        call ShowState
+                        call PressKeyToContinue
                         jp Loop
 
 ShowWaitingForMove      nop
@@ -145,16 +147,51 @@ GetLatestMessage        ld hl, (MSG_COUNT)
                         ld (MBOX_MSG_ID), hl
                         call HandleGetMessage
                         ret
-; move
-; 1    000 000 001
-ProcessMessage                   
-pend
 
+ShowFinished            PrintLine(0,10,MSG_FINISHED, MSG_FINISHED_LEN)
+                        ld a, (WE_WON)
+                        cp 1
+                        jp nz,TheyWon
+                        PrintLine(0,11,MSG_YOU_WON, MSG_YOU_WON_LEN)                        
+                        ret
+TheyWon                 PrintLine(0,11,MSG_YOU_LOST, MSG_YOU_LOST_LEN)                        
+                        ret     
+
+ShowState               ld hl, (IN_MESSAGE+2)
+                        ld a, (hl)
+
+; byte 1: move number
+;   0=no move yet
+;   1-9 move 1-9 
+;   10 finished
+; byte 2: our move? 
+;   1=yes 0=no
+; bytes 3-11: move history
+;   eg   900000000
+;   then 940000000
+;   then 942000000
+;   then 942100000 where number matches grid below
+;
 ;       o|x|o    1|2|3  
 ;      --+-+--  --+-+--
 ;       o|x|x    4|5|6
 ;      --+-+--  --+-+--
 ;       o|x|o    7|8|9
+;
+ProcessMessage          ld hl, IN_MESSAGE
+                        ld a, (hl)
+                        cp 10
+                        jp z, NotFinished
+                        ld a, 1
+                        ld (IS_GAME_FINISHED), a
+                        inc hl
+                        ld a, (hl)
+                        ld (IS_OUR_TURN), a
+
+                        ret
+
+pend
+
 
 ;
 ; end of main
@@ -574,6 +611,11 @@ KeyLoop                 call ROM_KEY_SCAN               ; d=modifier e=keycode o
 
 BAD_USER_MSG            defb "<no user registered>"     ;
 BAD_USER_MSG_LEN        equ $-BAD_USER_MSG              ;
+BOARD                   defb "  | |  "                        
+                        defb "--+-+--"
+                        defb "  | |  "
+                        defb "--+-+--"
+                        defb "  | |  "
 Buffer:                 ds 256                          ;
 BufferLen               equ $-Buffer                    ;
 BUFLEN                  defs 1                          ;
@@ -597,6 +639,7 @@ MBOX_NICK               defs 20                         ; our nick
 MBOX_NICK_LEN           defb 00,00                      ;
 MBOX_PROTOCOL_BYTES     defb $00, $01                   ;
 MBOX_USER_ID            defs 20                         ; the one used for transmission to allow the working buffer to be reset
+MOVE_TABLE              defb 2,4,6,9,11,13,16,18,20
 MSG_ERR_SENDING         defb "Error sending message"    ;
 MSG_ERR_SENDING_LEN     equ $-MSG_ERR_SENDING           ;
 MSG_JOIN_FAIL           defb "Failed to join pool"
@@ -612,6 +655,10 @@ OPPONENT_NICK_LEN       defb 1
 OUT_MESSAGE             ds 200,$09                      ; gets printed so fill with tab (not 0s and not space because users use space)
 MBOX_POOL_ID            defb 00,00
 MBOX_POOL_SIZE          defb 2
+MSG_YOU_WON             defb "You won!"
+MSG_YOU_WON_LEN         equ $-MSG_WE_WON
+MSG_YOU_LOST            defb "You lost!"
+MSG_YOU_LOST_LEN        equ $-MSG_THEY_WON
 PROMPT                  defb "> "                       ;
 PROMPT_LEN              equ $-PROMPT                    ;
 REG_PROMPT              defb "Enter your Next Mailbox Id (then enter)";
