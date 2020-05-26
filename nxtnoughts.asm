@@ -127,7 +127,7 @@ Loop                    call HandleCount                ; count messages, settin
 NotRegistered           call HandleRegister            ; 
                         jp Loop
 
-NoMessages              call JoinPool                   ; returns with every call 
+NoMessages              call JoinPool                   ; returns poolid with every call 
                         call GetPool                    ; returns unfilled or nick + orders
                         jp Loop
 
@@ -147,7 +147,7 @@ GetLatestMessage        ld hl, (MSG_COUNT)
                         ret
 ; move
 ; 1    000 000 001
-ProcessMessage          
+ProcessMessage                   
 pend
 
 ;       o|x|o    1|2|3  
@@ -184,7 +184,7 @@ BuildJoinPoolRequest    ld (MBOX_CMD), a                ;
                         WriteString(MBOX_CMD, 1)        ;
                         WriteString(MBOX_APP_ID, 1)     ; 1=nextmail
                         WriteString(MBOX_USER_ID,20)    ; userid
-                        WriteString(POOL_SIZE, 1)
+                        WriteString(MBOX_POOL_SIZE, 1)
                         ret                             ;
 
 ProcessJoinPoolResponse proc
@@ -199,10 +199,10 @@ ProcessJoinPoolResponse proc
                         jp Problem
 Joined                  inc hl                          ; move past status
                         ld a, (hl)                      ; get count
-                        ld (POOL_ID), a               ; store
+                        ld (MOX_POOL_ID), a               ; store
                         inc hl                          ; get 2nd byte
                         ld a, (hl)                      ;
-                        ld (POOL_ID+1), a             ; store 2nd
+                        ld (MXOX_POOL_ID+1), a             ; store 2nd
                         ret
 
 Problem                 PrintLine(0,7,MSG_JOIN_FAIL, MSG_JOIN_FAIL_LEN)
@@ -234,6 +234,7 @@ BuildGetPoolRequest     ld (MBOX_CMD), a                ;
                         WriteString(MBOX_CMD, 1)        ;
                         WriteString(MBOX_APP_ID, 1)     ; 1=nextmail
                         WriteString(MBOX_USER_ID,20)    ; userid
+                        WriteString(MBOX_POOL_ID)
                         ret                             ;
 
 ProcessGetPoolResponse  proc
@@ -609,8 +610,8 @@ NICK1_LEN               equ $-NICK1
 OPPONENT_NICK           ds 20
 OPPONENT_NICK_LEN       defb 1
 OUT_MESSAGE             ds 200,$09                      ; gets printed so fill with tab (not 0s and not space because users use space)
-POOL_ID                 defb 00,00
-POOL_SIZE               defb 2
+MBOX_POOL_ID            defb 00,00
+MBOX_POOL_SIZE          defb 2
 PROMPT                  defb "> "                       ;
 PROMPT_LEN              equ $-PROMPT                    ;
 REG_PROMPT              defb "Enter your Next Mailbox Id (then enter)";
