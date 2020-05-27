@@ -133,6 +133,8 @@ NoMessages              call JoinPool                   ; returns poolid with ev
 
 Finished                call ShowFinished
                         call ShowState
+                        call JoinPool
+                        call GetPool
                         call PressKeyToContinue
                         jp Loop
 
@@ -170,8 +172,87 @@ TheyWon                 PrintLine(0,11,MSG_YOU_LOST, MSG_YOU_LOST_LEN)
 ;
 ;
 ;
-ShowState               ld hl, (IN_MESSAGE+2)
-                        ld a, (hl)
+ShowState               proc
+                        ld b, 0
+                        ld c, 8
+                        ld a, 'o'                        
+                        ld ix, IN_MESSAGE+1
+Loop                    push af
+                        ld de, BOARD
+                        ld hl, MOVE_TABLE
+                        inc ix
+                        ld a, (ix)                      ; grid value for movenum
+                        push bc 
+                        ld c, a 
+                        add hl, bc                      ; add a to move_table to get board offset
+                        ld a, (hl)                      ; a is board offset
+                        ld c, a
+                        add de, bc                      ; 
+                        pop bc
+                        pop af
+                        ld (de), a
+                        call FlipToken 
+                        dec c
+                        jp nz, Loop
+                        PrintLine(0,15,BOARD, 7)
+                        PrintLine(0,16,BOARD+8, 7)
+                        PrintLine(0,17,BOARD+15,7)
+                        ret
+pend
+
+;
+;
+;
+GetMove                 proc
+                        PrintLine(0,4,MSG_PRESS_MOVE_KEY, MSG_PRESS_MOVE_KEY_LEN)
+                        call HandleMoveChoice
+                        call CheckWin
+
+HandleMoveChoice        call ROM_KEY_SCAN               ;
+                        inc d                           ; no shiftkey = ff
+                        ret nz                          ; ignore shifted key combos
+                        ld a,e                          ; a: = key code of key pressed (ff if none).
+                        cp '0'                          ; between 0-1?
+                        jp c,NotNum                     ;
+                        cp '9'+1                        ;
+                        jp nc,NotNum       
+                        call CheckUniqueMove
+                        jp z,HandleMoveChoice
+                        ld (MOVE_POSITION), a
+
+NotNum                  jp HandleMoveChoice                                                   
+                        
+pend
+
+;
+;
+;
+CheckUniqueMove         pro c
+                        ld hl, IN_MESSAGE+3
+                        ld b, 0
+                        ld c, 8
+                        cpir 
+                        ret
+pend
+
+;
+;
+;
+SendMove                proc
+                        ret
+pend
+
+;
+; ENTRY
+;   A = 'o' or 'x'
+; EXIT
+;   A = 'x' or 'o'
+FlipToken               cp 'o'
+                        jp z, MakeCross
+                        ld a, 'o'
+                        ret
+MakeCross               ld a, 'x'
+                        ret
 
 ; byte 1: move number
 ;   0=no move yet
@@ -651,6 +732,8 @@ MBOX_CMD                defb $01                        ;
 MBOX_MSG_ID             defb 0,0                        ; 2 bytes for 0-65535
 MBOX_NICK               defs 20                         ; our nick
 MBOX_NICK_LEN           defb 00,00                      ;
+MBOX_POOL_ID            defb 00,00
+MBOX_POOL_SIZE          defb 2
 MBOX_PROTOCOL_BYTES     defb $00, $01                   ;
 MBOX_USER_ID            defs 20                         ; the one used for transmission to allow the working buffer to be reset
 MOVE_TABLE              defb 2,4,6,9,11,13,16,18,20
@@ -662,19 +745,17 @@ MSG_PRESS_KEY           defb "Press any key to continue";
 MSG_PRESS_KEY_LEN       equ $-MSG_PRESS_KEY             ;
 MSG_NICK                defb "Nick: "                   ;
 MSG_NICK_LEN            equ $-MSG_NICK                  ;
+MSG_YOU_LOST            defb "You lost!"
+MSG_YOU_LOST_LEN        equ $-MSG_THEY_WON
+MSG_YOU_WON             defb "You won!"
+MSG_YOU_WON_LEN         equ $-MSG_WE_WON
+MSG_WAITING_FOR_MOVE    defb "Waiting for opponent to move"
+MSG_WAITING_FOR_MOVE_LEN equ $-MSG_WAITING_FOR_MOVE
 NICK1                   ds 20
 NICK1_LEN               equ $-NICK1
 OPPONENT_NICK           ds 20
 OPPONENT_NICK_LEN       defb 1
 OUT_MESSAGE             ds 200,$09                      ; gets printed so fill with tab (not 0s and not space because users use space)
-MBOX_POOL_ID            defb 00,00
-MBOX_POOL_SIZE          defb 2
-MSG_YOU_WON             defb "You won!"
-MSG_YOU_WON_LEN         equ $-MSG_WE_WON
-MSG_YOU_LOST            defb "You lost!"
-MSG_YOU_LOST_LEN        equ $-MSG_THEY_WON
-MSG_WAITING_FOR_MOVE    defb "Waiting for opponent to move"
-MSG_WAITING_FOR_MOVE_LEN equ $-MSG_WAITING_FOR_MOVE
 PROMPT                  defb "> "                       ;
 PROMPT_LEN              equ $-PROMPT                    ;
 REG_PROMPT              defb "Enter your Next Mailbox Id (then enter)";
