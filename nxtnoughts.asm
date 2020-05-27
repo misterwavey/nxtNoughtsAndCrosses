@@ -118,7 +118,7 @@ Loop                    call HandleCount                ; count messages, settin
                         jp z, Finished
                         call ShowState
                         ld a, (IS_OUR_TURN)
-                        cp 0
+                        cp 1
                         jp nz, ShowWaitingForMove
                         call GetMove
                         call SendMove
@@ -136,18 +136,28 @@ Finished                call ShowFinished
                         call PressKeyToContinue
                         jp Loop
 
-ShowWaitingForMove      nop
+ShowWaitingForMove      PrintLine(0,8,MSG_WAITING_FOR_MOVE, MSG_WAITING_FOR_MOVE_LEN)
+                        call PressKeyToContinue
                         jp Loop
 
+;
+;
+;
 ProcessLatestMessage    call GetLatestMessage    
                         call ProcessMessage
                         ret                        
 
+;
+;
+;
 GetLatestMessage        ld hl, (MSG_COUNT)
                         ld (MBOX_MSG_ID), hl
                         call HandleGetMessage
                         ret
 
+;
+;
+;
 ShowFinished            PrintLine(0,10,MSG_FINISHED, MSG_FINISHED_LEN)
                         ld a, (WE_WON)
                         cp 1
@@ -157,6 +167,9 @@ ShowFinished            PrintLine(0,10,MSG_FINISHED, MSG_FINISHED_LEN)
 TheyWon                 PrintLine(0,11,MSG_YOU_LOST, MSG_YOU_LOST_LEN)                        
                         ret     
 
+;
+;
+;
 ShowState               ld hl, (IN_MESSAGE+2)
                         ld a, (hl)
 
@@ -176,7 +189,7 @@ ShowState               ld hl, (IN_MESSAGE+2)
 ;      --+-+--  --+-+--
 ;       o|x|x    4|5|6
 ;      --+-+--  --+-+--
-;       o|x|o    7|8|9
+;       x|x|o    7|8|9
 ;
 ProcessMessage          ld hl, IN_MESSAGE
                         ld a, (hl)
@@ -187,10 +200,11 @@ ProcessMessage          ld hl, IN_MESSAGE
                         inc hl
                         ld a, (hl)
                         ld (IS_OUR_TURN), a
-
                         ret
-
-pend
+NotFinished             ld a, 0
+                        ld (IS_GAME_FINISHED), a
+                        ret
+pend ; main loop
 
 
 ;
@@ -659,6 +673,8 @@ MSG_YOU_WON             defb "You won!"
 MSG_YOU_WON_LEN         equ $-MSG_WE_WON
 MSG_YOU_LOST            defb "You lost!"
 MSG_YOU_LOST_LEN        equ $-MSG_THEY_WON
+MSG_WAITING_FOR_MOVE    defb "Waiting for opponent to move"
+MSG_WAITING_FOR_MOVE_LEN equ $-MSG_WAITING_FOR_MOVE
 PROMPT                  defb "> "                       ;
 PROMPT_LEN              equ $-PROMPT                    ;
 REG_PROMPT              defb "Enter your Next Mailbox Id (then enter)";
@@ -666,7 +682,7 @@ REG_PROMPT_LEN          equ $-REG_PROMPT                ;
 REQUESTBUF              ds 256                          ;
 SENDBUF                 defb 255                        ;
 USER_ID_BUF             defs 20, ' '                    ; our input buffer
-VERSION                 defb "nxtMail v0.4 2020 Tadaguff";
+VERSION                 defb "nxtNoughts v0.1 2020 Tadaguff";
 VERSION_LEN             equ $-VERSION                   ;
 WE_GO_FIRST             defb 0
 
