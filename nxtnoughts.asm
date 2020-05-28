@@ -122,6 +122,8 @@ Loop                    call HandleCount                ; count messages, settin
                         jp nz, ShowWaitingForMove
                         call GetMove
                         call SendMove
+                        call ShowState
+                        call CheckWin
                         jp Loop
 
 NotRegistered           call HandleRegister            ; 
@@ -176,22 +178,24 @@ ShowState               proc
                         ld b, 0
                         ld c, 8
                         ld a, 'o'                        
-                        ld ix, IN_MESSAGE+1
+                        ld ix, MOVE_HISTORY-1
 Loop                    push af
                         ld de, BOARD
                         ld hl, MOVE_TABLE
                         inc ix
                         ld a, (ix)                      ; grid value for movenum
+                        cp 0
+                        ret z                           ; no more moves to process
                         push bc 
                         ld c, a 
                         add hl, bc                      ; add a to move_table to get board offset
                         ld a, (hl)                      ; a is board offset
                         ld c, a
-                        add de, bc                      ; 
+                        add de, bc                      ; update board inline based on offset
                         pop bc
                         pop af
                         ld (de), a
-                        call FlipToken 
+                        call FlipToken                  ; change player's token
                         dec c
                         jp nz, Loop
                         PrintLine(0,15,BOARD, 7)
@@ -206,29 +210,101 @@ pend
 GetMove                 proc
                         PrintLine(0,4,MSG_PRESS_MOVE_KEY, MSG_PRESS_MOVE_KEY_LEN)
                         call HandleMoveChoice
-                        call CheckWin
+                        ret                                                                     
+pend
 
+;
+;
+;
 HandleMoveChoice        call ROM_KEY_SCAN               ;
                         inc d                           ; no shiftkey = ff
-                        ret nz                          ; ignore shifted key combos
+                        jp z, HandleMoveChoice          ; ignore shifted key combos
                         ld a,e                          ; a: = key code of key pressed (ff if none).
-                        cp '0'                          ; between 0-1?
+                        cp '1'                          ; between 1-9?
                         jp c,NotNum                     ;
                         cp '9'+1                        ;
                         jp nc,NotNum       
                         call CheckUniqueMove
                         jp z,HandleMoveChoice
                         ld (MOVE_POSITION), a
+                        ld hl, MOVE_HISTORY
+                        push af
+                        ld a, 0
+                        ld b, 0
+                        ld c, 8
+                        cpir
+                        pop af
+                        ld (hl), a                      ;append move to move_history
+                        ret
+NotNum                  jp HandleMoveChoice      
 
-NotNum                  jp HandleMoveChoice                                                   
-                        
+;
+; EXIT: carry set if won
+;       and A contains token
+;
+; move_history: 92416700
+; xmove: 946
+; omove: 217 
+; win_table: 1,2,3, 1,4,7, 4,5,6, 7,8,9, 3,6,9, 1,5,9, 3,5,7
+; move_position: 7
+;     
+;       o|x|o    1|2|3  
+;      --+-+--  --+-+--
+;       o|x|x    4|5|6
+;      --+-+--  --+-+--
+;       x|x|o    7|8|9
+;
+; for 1-7
+;    visit win triple
+;       check token at each
+;       if same, win
+;       else next triple
+CheckWin                proc
+                        ld hl, MOVE_HISTORY
+                        ld b, 0
+                        ld c, 8
+                        ld a, 0
+                        cpir                           
+                        ld a, c                         ; 5+ moves needed for win (o,x,o,x,o etc)
+                        cp 5
+                        ret nc                          ; not enough moves for a win
+                        ld c, 0
+                        ld hl, WIN_TABLE                        
+Loop                    ld a, (hl)
+                        inc hl
+                        ld b, (hl)
+                        cp b
+                        inc hl
+                        jp nz, NoWin
+                        ld b, (hl)
+                        cp b
+                        jp nz, NoWin
+                        scf
+                        ret
+NoWin                   inc c
+                        ld a, 9
+                        cp c
+                        jp nc, Loop
+                        scf
+                        ccf
+                        ret
 pend
 
 ;
 ;
 ;
-CheckUniqueMove         pro c
-                        ld hl, IN_MESSAGE+3
+TokenAtPosition         proc
+
+                        ret
+pend                        
+
+
+;
+; ENTRY: A holds grid number
+; EXIT: z if move has happened before
+;
+CheckUniqueMove         proc
+                        ld hl, MOVE_HISTORY
                         ld b, 0
                         ld c, 8
                         cpir 
@@ -272,18 +348,23 @@ MakeCross               ld a, 'x'
 ;      --+-+--  --+-+--
 ;       x|x|o    7|8|9
 ;
-ProcessMessage          ld hl, IN_MESSAGE
+ProcessMessage          ld hl, IN_MESSAGE               ; byte 1: move number
                         ld a, (hl)
                         cp 10
                         jp z, NotFinished
-                        ld a, 1
+                        ld a, 1                         ; finished!
                         ld (IS_GAME_FINISHED), a
-                        inc hl
-                        ld a, (hl)
-                        ld (IS_OUR_TURN), a
                         ret
 NotFinished             ld a, 0
                         ld (IS_GAME_FINISHED), a
+                        inc hl                          ; byte 2 - our move?
+                        ld a, (hl)
+                        ld (IS_OUR_TURN), a
+                        inc hl                          ; bytes 3-11 - move history
+                        ld de, MOVE_HISTORY
+                        ld b,0
+                        ld c,9                          ; copy 9 moves into move_history
+                        ldir
                         ret
 pend ; main loop
 
@@ -736,7 +817,8 @@ MBOX_POOL_ID            defb 00,00
 MBOX_POOL_SIZE          defb 2
 MBOX_PROTOCOL_BYTES     defb $00, $01                   ;
 MBOX_USER_ID            defs 20                         ; the one used for transmission to allow the working buffer to be reset
-MOVE_TABLE              defb 2,4,6,9,11,13,16,18,20
+MOVE_HISTORY            defb 9
+MOVE_TABLE              defb 2,4,6,9,11,13,16,18,20     ; offset from board for piece position
 MSG_ERR_SENDING         defb "Error sending message"    ;
 MSG_ERR_SENDING_LEN     equ $-MSG_ERR_SENDING           ;
 MSG_JOIN_FAIL           defb "Failed to join pool"
@@ -766,6 +848,7 @@ USER_ID_BUF             defs 20, ' '                    ; our input buffer
 VERSION                 defb "nxtNoughts v0.1 2020 Tadaguff";
 VERSION_LEN             equ $-VERSION                   ;
 WE_GO_FIRST             defb 0
+WIN_TABLE               defb 1,2,3,1,4,7,4,5,6,7,8,9,3,6,9,1,5,9,3,5,7
 
                         include "esp.asm"               ;
                         include "constants.asm"         ;
