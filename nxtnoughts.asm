@@ -39,10 +39,10 @@ CPU_28                  equ 11b                         ; 11b = 28MHz
 MBOX_CMD_REGISTER                   equ 1
 MBOX_CMD_CHECK_REGISTERED_NICKNAME  equ 2
 MBOX_CMD_SEND_MESSAGE               equ 3
-MBOX_CMD_MESSGAGE_COUNT             equ 4
+MBOX_CMD_MESSAGE_COUNT             equ 4
 MBOX_CMD_GET_MESSAGE                equ 5
-MBOX_CMD_JOIN_POOL                  equ 6 
-MBOX_CMD_GET_POOL                   equ 7 
+MBOX_CMD_JOIN_POOL                  equ 6
+MBOX_CMD_GET_POOL                   equ 7
 
 MBOX_STATUS_OK                      equ 0
 MBOX_STATUS_INVALID_PROTOCOL        equ 1
@@ -79,13 +79,13 @@ org                     $8000                           ; This should keep our c
                         ;                                 (Necessary for making NextZXOS API calls);
 
 ;    connect
-;    get msg count 
+;    get msg count
 ;    if not reg
 ;      reg
 ;      join pool
 ;    else if no msgs (because unfilled)
 ;      get pool (ie return the pool we're in)
-;      if unfilled    
+;      if unfilled
 ;        show waiting for player
 ;    else if msg shows game finished
 ;      show finished
@@ -95,9 +95,9 @@ org                     $8000                           ; This should keep our c
 ;      if our move
 ;        get move
 ;        send move
-;      else 
+;      else
 ;        show waiting for player
-;      
+;
 
 ;
 ; main loop
@@ -124,12 +124,12 @@ Loop                    call HandleCount                ; count messages, settin
                         call SendMove
                         call ShowState
                         call CheckWin
-t                        jp Loop
-
-NotRegistered           call HandleRegister            ; 
                         jp Loop
 
-NoMessages              call JoinPool                   ; returns poolid with every call 
+NotRegistered           call HandleRegister            ;
+                        jp Loop
+
+NoMessages              call JoinPool                   ; returns poolid with every call
                         call GetPool                    ; returns unfilled or nick + orders
                         jp Loop
 
@@ -143,13 +143,14 @@ Finished                call ShowFinished
 ShowWaitingForMove      PrintLine(0,8,MSG_WAITING_FOR_MOVE, MSG_WAITING_FOR_MOVE_LEN)
                         call PressKeyToContinue
                         jp Loop
+pend
 
 ;
 ;
 ;
-ProcessLatestMessage    call GetLatestMessage    
+ProcessLatestMessage    call GetLatestMessage
                         call ProcessMessage
-                        ret                        
+                        ret
 
 ;
 ;
@@ -166,10 +167,10 @@ ShowFinished            PrintLine(0,10,MSG_FINISHED, MSG_FINISHED_LEN)
                         ld a, (WE_WON)
                         cp 1
                         jp nz,TheyWon
-                        PrintLine(0,11,MSG_YOU_WON, MSG_YOU_WON_LEN)                        
+                        PrintLine(0,11,MSG_YOU_WON, MSG_YOU_WON_LEN)
                         ret
-TheyWon                 PrintLine(0,11,MSG_YOU_LOST, MSG_YOU_LOST_LEN)                        
-                        ret     
+TheyWon                 PrintLine(0,11,MSG_YOU_LOST, MSG_YOU_LOST_LEN)
+                        ret
 
 ;
 ;
@@ -177,7 +178,7 @@ TheyWon                 PrintLine(0,11,MSG_YOU_LOST, MSG_YOU_LOST_LEN)
 ShowState               proc
                         ld b, 0
                         ld c, 8
-                        ld a, 'o'                        
+                        ld a, 'o'
                         ld ix, MOVE_HISTORY-1
 Loop                    push af
                         ld de, BOARD
@@ -186,15 +187,23 @@ Loop                    push af
                         ld a, (ix)                      ; grid value for movenum
                         cp 0
                         ret z                           ; no more moves to process
-                        push bc 
-                        ld c, a 
+                        push bc
+                        ld c, a
                         add hl, bc                      ; add a to move_table to get board offset
                         ld a, (hl)                      ; a is board offset
                         ld c, a
-                        add de, bc                      ; update board inline based on offset
+                        push hl
+                        push de
+                        pop hl
+                        pop de
+                        add hl, bc                      ; update board inline based on offset
                         pop bc
                         pop af
-                        ld (de), a
+                        ld (hl), a
+                        push hl
+                        push de
+                        pop hl
+                        pop de
                         call FlipToken                  ; change player's token
                         dec c
                         jp nz, Loop
@@ -210,7 +219,7 @@ pend
 GetMove                 proc
                         PrintLine(0,4,MSG_PRESS_MOVE_KEY, MSG_PRESS_MOVE_KEY_LEN)
                         call HandleMoveChoice
-                        ret                                                                     
+                        ret
 pend
 
 ;
@@ -223,7 +232,7 @@ HandleMoveChoice        call ROM_KEY_SCAN               ;
                         cp '1'                          ; between 1-9?
                         jp c,NotNum                     ;
                         cp '9'+1                        ;
-                        jp nc,NotNum       
+                        jp nc,NotNum
                         call CheckUniqueMove
                         jp z,HandleMoveChoice
                         ld (MOVE_POSITION), a
@@ -236,10 +245,10 @@ HandleMoveChoice        call ROM_KEY_SCAN               ;
                         pop af
                         ld (hl), a                      ;append move to move_history
                         ret
-NotNum                  jp HandleMoveChoice      
+NotNum                  jp HandleMoveChoice
 ;
 ;
-; 
+;
 SendMove                proc
                         call BuildOpponentMessage
                         ld a, MBOX_CMD_SEND_MESSAGE     ; send:   0 1 3 1 98 97 104 111 106 115 105 98 111 102 108 111 98 117 116 115 117 106 97 114 115 116 117 97 114 116 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 116 104 101 32 113 117 105 99 107 32 98 114 111 119 110 32 102 111 120 0
@@ -252,14 +261,23 @@ SendMove                proc
 
                         call BuildOurMessage
                         ld a, MBOX_CMD_SEND_MESSAGE     ; send:   0 1 3 1 98 97 104 111 106 115 105 98 111 102 108 111 98 117 116 115 117 106 97 114 115 116 117 97 114 116 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 116 104 101 32 113 117 105 99 107 32 98 114 111 119 110 32 102 111 120 0
-                        call BuildSendMsgRequest        ;
+                        call BuildOurMsgRequest        ;
                         ld h, 0                         ; result: 0
                         ld l, 2+1+1+20+20+200           ; proto+cmd+app+userid+targetnick+message
                         ld de, REQUESTBUF               ;
                         call MakeCIPSend                ;
-                        call ProcessSendResponse        ;
+                        call ProcessSendResponse      ;
                         ret
 pend
+
+ProcessSendResponse     ld hl, (ResponseStart)          ;
+                        ld a, (hl)                      ;
+                        cp MBOX_STATUS_OK               ;
+                        jp nz, PrintProblemSend         ;
+                        ret                             ;
+PrintProblemSend        PrintLine(15,15, MSG_ERR_SENDING,MSG_ERR_SENDING_LEN);
+                        call PressKeyToContinue
+                        ret
 
 BuildOpponentMsgRequest ld (MBOX_CMD), a                ;
                         ld de, REQUESTBUF               ; entire server request string
@@ -269,9 +287,9 @@ BuildOpponentMsgRequest ld (MBOX_CMD), a                ;
                         WriteString(MBOX_USER_ID,20)    ; userid
                         WriteString(OPPONENT_NICK,20) ;
                         WriteString(OUT_MESSAGE,200)    ;
-                        ret               
+                        ret
 
-BuildOOurMsgRequest     ld (MBOX_CMD), a                ;
+BuildOurMsgRequest     ld (MBOX_CMD), a                ;
                         ld de, REQUESTBUF               ; entire server request string
                         WriteString(MBOX_PROTOCOL_BYTES, 2);
                         WriteString(MBOX_CMD, 1)        ;
@@ -279,13 +297,13 @@ BuildOOurMsgRequest     ld (MBOX_CMD), a                ;
                         WriteString(MBOX_USER_ID,20)    ; userid
                         WriteString(MBOX_NICK,20) ;
                         WriteString(OUT_MESSAGE,200)    ;
-                        ret               
+                        ret
 
 ; byte 1: move number
 ;   0=no move yet
-;   1-9 move 1-9 
+;   1-9 move 1-9
 ;   10 finished
-; byte 2: our move? 
+; byte 2: our move?
 ;   1=yes 0=no
 ; bytes 3-11: move history
 ;   eg   900000000
@@ -293,7 +311,7 @@ BuildOOurMsgRequest     ld (MBOX_CMD), a                ;
 ;   then 942000000
 ;   then 942100000 where number matches grid below
 ;
-;       o|x|o    1|2|3  
+;       o|x|o    1|2|3
 ;      --+-+--  --+-+--
 ;       o|x|x    4|5|6
 ;      --+-+--  --+-+--
@@ -311,7 +329,7 @@ BuildOpponentMessage         proc
                         ld hl, MOVE_HISTORY
                         ld b,0
                         ld c,9
-                        ldir 
+                        ldir
                         ret
 pend
 
@@ -328,7 +346,7 @@ BuildOurMessage         proc
                         ld hl, MOVE_HISTORY
                         ld b,0
                         ld c,9
-                        ldir 
+                        ldir
                         ret
 pend
 
@@ -338,11 +356,11 @@ pend
 ;
 ; move_history: 92416700
 ; xmove: 946
-; omove: 217 
+; omove: 217
 ; win_table: 1,2,3, 1,4,7, 4,5,6, 7,8,9, 3,6,9, 1,5,9, 3,5,7
 ; move_position: 7
-;     
-;       o|x|o    1|2|3  
+;
+;       o|x|o    1|2|3
 ;      --+-+--  --+-+--
 ;       o|x|x    4|5|6
 ;      --+-+--  --+-+--
@@ -358,12 +376,12 @@ CheckWin                proc
                         ld b, 0
                         ld c, 8
                         ld a, 0
-                        cpir                           
+                        cpir
                         ld a, c                         ; 5+ moves needed for win (o,x,o,x,o etc)
                         cp 5
                         ret nc                          ; not enough moves for a win
                         ld c, 0
-                        ld hl, WIN_TABLE                        
+                        ld hl, WIN_TABLE
 Loop                    ld a, (hl)
                         inc hl
                         ld b, (hl)
@@ -390,7 +408,7 @@ pend
 TokenAtPosition         proc
 
                         ret
-pend                        
+pend
 
 
 ;
@@ -401,7 +419,7 @@ CheckUniqueMove         proc
                         ld hl, MOVE_HISTORY
                         ld b, 0
                         ld c, 8
-                        cpir 
+                        cpir
                         ret
 pend
 
@@ -419,9 +437,9 @@ MakeCross               ld a, 'x'
 
 ; byte 1: move number
 ;   0=no move yet
-;   1-9 move 1-9 
+;   1-9 move 1-9
 ;   10 finished
-; byte 2: our move? 
+; byte 2: our move?
 ;   1=yes 0=no
 ; bytes 3-11: move history
 ;   eg   900000000
@@ -429,7 +447,7 @@ MakeCross               ld a, 'x'
 ;   then 942000000
 ;   then 942100000 where number matches grid below
 ;
-;       o|x|o    1|2|3  
+;       o|x|o    1|2|3
 ;      --+-+--  --+-+--
 ;       o|x|x    4|5|6
 ;      --+-+--  --+-+--
@@ -465,8 +483,8 @@ pend ; main loop
 ; join pool
 ;
 JoinPool                ld a, MBOX_CMD_JOIN_POOL        ;
-                        call BuildJoinPoolRequest       ;                                         
-                        ld de, REQUESTBUF               ; 
+                        call BuildJoinPoolRequest       ;
+                        ld de, REQUESTBUF               ;
                         ld h, 0                         ;
                         ld l, 2+1+1+20+1                  ; proto+cmd+app+userid+poolsize
                         call MakeCIPSend                ;
@@ -491,7 +509,7 @@ BuildJoinPoolRequest    ld (MBOX_CMD), a                ;
 ProcessJoinPoolResponse proc
                         ld hl, (ResponseStart)          ;
                         ld a, (hl)                      ;
-                        cp MBOX_STATUS_UNREG_USER ; 104
+                        cp MBOX_STATUS_UNREGISTERED_USERID ; 104
                         jp z, Problem             ;
                         cp MBOX_STATUS_JOINED_POOL; 205
                         jp z, Joined
@@ -500,10 +518,10 @@ ProcessJoinPoolResponse proc
                         jp Problem
 Joined                  inc hl                          ; move past status
                         ld a, (hl)                      ; get count
-                        ld (MOX_POOL_ID), a               ; store
+                        ld (MBOX_POOL_ID), a               ; store
                         inc hl                          ; get 2nd byte
                         ld a, (hl)                      ;
-                        ld (MXOX_POOL_ID+1), a             ; store 2nd
+                        ld (MBOX_POOL_ID+1), a             ; store 2nd
                         ret
 
 Problem                 PrintLine(0,7,MSG_JOIN_FAIL, MSG_JOIN_FAIL_LEN)
@@ -515,8 +533,8 @@ pend
 ; get pool
 ;
 GetPool                 ld a, MBOX_CMD_JOIN_POOL        ;
-                        call BuildGetPoolRequest       ;                                         
-                        ld de, REQUESTBUF               ; 
+                        call BuildGetPoolRequest       ;
+                        ld de, REQUESTBUF               ;
                         ld h, 0                         ;
                         ld l, 2+1+1+20                  ; proto+cmd+app+userid+poolsize
                         call MakeCIPSend                ;
@@ -535,15 +553,15 @@ BuildGetPoolRequest     ld (MBOX_CMD), a                ;
                         WriteString(MBOX_CMD, 1)        ;
                         WriteString(MBOX_APP_ID, 1)     ; 1=nextmail
                         WriteString(MBOX_USER_ID,20)    ; userid
-                        WriteString(MBOX_POOL_ID)
+                        WriteString(MBOX_POOL_ID, 2)
                         ret                             ;
 
 ProcessGetPoolResponse  proc
                         ld hl, (ResponseStart)          ;
                         ld a, (hl)                      ;
-                        cp MBOX_STATUS_UNREG_USER ; 104
+                        cp MBOX_STATUS_UNREGISTERED_USERID ; 104
                         jp z, Problem             ;
-                        cp MBOX_STATUS_MISSING_POOLID; 205
+                        cp MBOX_STATUS_MISSING_POOL_ID; 205
                         jp z, Problem
                         cp MBOX_STATUS_POOL_UNFILLED ;208
                         jp z, Done
@@ -563,15 +581,15 @@ Filled                  inc hl                          ; move past status
                         inc hl                          ; move to nick contents
                         ld de, NICK1
                         ldir                            ; populate NICK1 with message contents. hl at next nick len
-                        call CheckIfNickIsOurs 
+                        call CheckIfNickIsOurs
                         jp nz, TheyGoFirst              ; nick 1 is the opponent, so they go first
-                        ld a, (hl)                      ; nick1 is us. get nick2 len 
+                        ld a, (hl)                      ; nick1 is us. get nick2 len
                         ld b, 0
                         ld c, a
                         ld (OPPONENT_NICK_LEN), a
                         inc hl                          ; move to nick2
                         ld de, OPPONENT_NICK
-                        ldir 
+                        ldir
                         ld a, 1
                         ld (WE_GO_FIRST), a             ; set WE_GO_FIRST to true
                         jp Done
@@ -704,7 +722,7 @@ WipeUserId              ld hl, USER_ID_BUF              ;   fill nick with space
 ;
 ProcessRegResponse      ld hl, (ResponseStart)          ;
                         ld a, (hl)                      ;
-                        cp MBOX_STATUS_USR_ALR_REG      ; already? no problem
+                        cp MBOX_STATUS_USER_ALREADY_REGISTERED      ; already? no problem
                         jp z, PrintNickname             ;
                         cp MBOX_STATUS_REGISTER_OK      ; ok? cool
                         jp z, PrintNickname             ;
@@ -721,7 +739,6 @@ PrintNickname           ld a, 1                         ;
                         ld hl, MBOX_NICK                ;
                         ld de, MBOX_NICK_LEN            ;
                         call CalcNickLength             ;
-                        call SaveFile                   ;
                         ret                             ;
 
 ;
@@ -749,7 +766,7 @@ HandleCount             ld a, MBOX_CMD_MESSAGE_COUNT    ;
 ProcessMsgCountResponse proc
                         ld hl, (ResponseStart)          ;
                         ld a, (hl)                      ;
-                        cp MBOX_STATUS_UNREG_USER         ;
+                        cp MBOX_STATUS_UNREGISTERED_USERID         ;
                         jp z, Problem             ;
                         cp MBOX_STATUS_COUNT_OK
                         jp nz, Problem
@@ -782,9 +799,6 @@ HandleGetMessage        ld a, MBOX_CMD_GET_MESSAGE      ;
                         ld de, REQUESTBUF               ;
                         call MakeCIPSend                ;
                         call ProcessGetResponse         ;
-                        call PressKeyToContinue         ;
-                        call ClearCentre                ;
-                        call DisplayStatus              ;
 
                         ret                             ;
 
@@ -800,7 +814,7 @@ BuildGetMsgRequest      ld (MBOX_CMD), a                ;
 
 ProcessGetResponse      ld hl, (ResponseStart)          ;  status byte
                         ld a, (hl)                      ;
-                        cp MBOX_STATUS_GET_MSG_OK       ; is it ok?
+                        cp MBOX_STATUS_GET_MESSAGE_OK       ; is it ok?
                         jp nz, PrintBadMsgId            ; no - show error
                         inc hl                          ; yes - move past status byte into sender's nick
                         ld de, IN_NICK                  ; will hold our copy of the msg sender's nick
@@ -817,9 +831,6 @@ ProcessGetResponse      ld hl, (ResponseStart)          ;  status byte
                         inc hl                          ; move past len byte into start of msg
                         ld bc, (IN_MSG_LEN)             ;
                         ldir                            ;
-                        PrintLine(0,10,MSG_FROM,MSG_FROM_LEN);
-                        PrintLineLenVar(0+MSG_FROM_LEN,10,IN_NICK,IN_NICK_LEN);
-                        PrintLineLenVar(0,12,IN_MESSAGE,IN_MSG_LEN);
                         ret                             ;
 
 PrintBadMsgId           PrintLine(0,15,BAD_MSG_ID,BAD_MSG_ID_LEN) ;
@@ -873,9 +884,11 @@ KeyLoop                 call ROM_KEY_SCAN               ; d=modifier e=keycode o
                         ret nz                          ; yes, return
                         jp KeyLoop                      ; otherwise continue to check for input
 
+BAD_MSG_ID              defb "bad message id error for get msg"     ;
+BAD_MSG_ID_LEN          equ $-BAD_USER_MSG              ;
 BAD_USER_MSG            defb "<no user registered>"     ;
 BAD_USER_MSG_LEN        equ $-BAD_USER_MSG              ;
-BOARD                   defb "  | |  "                        
+BOARD                   defb "  | |  "
                         defb "--+-+--"
                         defb "  | |  "
                         defb "--+-+--"
@@ -891,12 +904,14 @@ IN_MESSAGE              defs 200                        ;
 IN_MSG_LEN              defb 0,0                        ; 2 because we'll point BC at it for ldir
 IN_NICK                 defs 20                         ;
 IN_NICK_LEN             defb 0,0                        ;
+IS_GAME_FINISHED        defb 1
+IS_OUR_TURN             defb 1
 MboxHost                defb "nextmailbox.spectrum.cl"  ;
 MboxHostLen             equ $-MboxHost                  ;
 MboxPort:               defb "8361"                     ;
 MboxPortLen:            equ $-MboxPort                  ;
 MBOX_APP_ID             defb $01                        ; nxtmail is app 1 in db
-MBOX_BLANK_NICK         defs 20,' '                     ; 
+MBOX_BLANK_NICK         defs 20,' '                     ;
 MBOX_CMD                defb $01                        ;
 MBOX_MSG_ID             defb 0,0                        ; 2 bytes for 0-65535
 MBOX_NICK               defs 20                         ; our nick
@@ -909,18 +924,23 @@ MOVE_HISTORY            defb 9
 MOVE_NUMBER             defb 1
 MOVE_POSITION           defb 1
 MOVE_TABLE              defb 2,4,6,9,11,13,16,18,20     ; offset from board for piece position
+MSG_COUNT               defb 0,0
 MSG_ERR_SENDING         defb "Error sending message"    ;
 MSG_ERR_SENDING_LEN     equ $-MSG_ERR_SENDING           ;
+MSG_FINISHED            defb "Game finished"
+MSG_FINISHED_LEN        equ $-MSG_FINISHED
 MSG_JOIN_FAIL           defb "Failed to join pool"
 MSG_JOIN_FAIL_LEN       equ $-MSG_JOIN_FAIL
 MSG_PRESS_KEY           defb "Press any key to continue";
 MSG_PRESS_KEY_LEN       equ $-MSG_PRESS_KEY             ;
+MSG_PRESS_MOVE_KEY      defb "Press 1-9 to place token";
+MSG_PRESS_MOVE_KEY_LEN  equ $-MSG_PRESS_MOVE_KEY             ;
 MSG_NICK                defb "Nick: "                   ;
 MSG_NICK_LEN            equ $-MSG_NICK                  ;
 MSG_YOU_LOST            defb "You lost!"
-MSG_YOU_LOST_LEN        equ $-MSG_THEY_WON
+MSG_YOU_LOST_LEN        equ $-MSG_YOU_LOST
 MSG_YOU_WON             defb "You won!"
-MSG_YOU_WON_LEN         equ $-MSG_WE_WON
+MSG_YOU_WON_LEN         equ $-MSG_YOU_WON
 MSG_WAITING_FOR_MOVE    defb "Waiting for opponent to move"
 MSG_WAITING_FOR_MOVE_LEN equ $-MSG_WAITING_FOR_MOVE
 NICK1                   ds 20
@@ -937,6 +957,7 @@ SENDBUF                 defb 255                        ;
 USER_ID_BUF             defs 20, ' '                    ; our input buffer
 VERSION                 defb "nxtNoughts v0.1 2020 Tadaguff";
 VERSION_LEN             equ $-VERSION                   ;
+WE_WON                  defb 0
 WE_GO_FIRST             defb 0
 WIN_TABLE               defb 1,2,3,1,4,7,4,5,6,7,8,9,3,6,9,1,5,9,3,5,7
 
@@ -947,13 +968,12 @@ WIN_TABLE               defb 1,2,3,1,4,7,4,5,6,7,8,9,3,6,9,1,5,9,3,5,7
                         include "macros.asm"            ;
                         include "esxDOS.asm"            ;
                         include "cip.asm"               ;
-                        include "file.asm"              ;
                         include "keys.asm"              ;
                         include "zeus.asm"              ; syntax highlighting
 
 
 ; Raise an assembly-time error if the expression evaluates false
-                        zeusassert zeusver<=78, "Upgrade to Zeus v4.00 (TEST ONLY) or above, available at http://www.desdes.com/products/oldfiles/zeustest.exe";
+                        zeusassert zeusver<=81, "Upgrade to Zeus v4.00 (TEST ONLY) or above, available at http://www.desdes.com/products/oldfiles/zeustest.exe";
 ; zeusprint               zeusver                         ;
 ; Generate a NEX file                                   ; Instruct the .NEX loader to write the file handle to this
                         ;        output_z80 "NxtMail.z80",$FF40, Main ;
