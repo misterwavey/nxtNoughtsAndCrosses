@@ -124,7 +124,7 @@ Loop                    call HandleCount                ; count messages, settin
                         call SendMove
                         call ShowState
                         call CheckWin
-                        jp Loop
+t                        jp Loop
 
 NotRegistered           call HandleRegister            ; 
                         jp Loop
@@ -237,6 +237,100 @@ HandleMoveChoice        call ROM_KEY_SCAN               ;
                         ld (hl), a                      ;append move to move_history
                         ret
 NotNum                  jp HandleMoveChoice      
+;
+;
+; 
+SendMove                proc
+                        call BuildOpponentMessage
+                        ld a, MBOX_CMD_SEND_MESSAGE     ; send:   0 1 3 1 98 97 104 111 106 115 105 98 111 102 108 111 98 117 116 115 117 106 97 114 115 116 117 97 114 116 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 116 104 101 32 113 117 105 99 107 32 98 114 111 119 110 32 102 111 120 0
+                        call BuildOpponentMsgRequest        ;
+                        ld h, 0                         ; result: 0
+                        ld l, 2+1+1+20+20+200           ; proto+cmd+app+userid+targetnick+message
+                        ld de, REQUESTBUF               ;
+                        call MakeCIPSend                ;
+                        call ProcessSendResponse        ;
+
+                        call BuildOurMessage
+                        ld a, MBOX_CMD_SEND_MESSAGE     ; send:   0 1 3 1 98 97 104 111 106 115 105 98 111 102 108 111 98 117 116 115 117 106 97 114 115 116 117 97 114 116 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 116 104 101 32 113 117 105 99 107 32 98 114 111 119 110 32 102 111 120 0
+                        call BuildSendMsgRequest        ;
+                        ld h, 0                         ; result: 0
+                        ld l, 2+1+1+20+20+200           ; proto+cmd+app+userid+targetnick+message
+                        ld de, REQUESTBUF               ;
+                        call MakeCIPSend                ;
+                        call ProcessSendResponse        ;
+                        ret
+pend
+
+BuildOpponentMsgRequest ld (MBOX_CMD), a                ;
+                        ld de, REQUESTBUF               ; entire server request string
+                        WriteString(MBOX_PROTOCOL_BYTES, 2);
+                        WriteString(MBOX_CMD, 1)        ;
+                        WriteString(MBOX_APP_ID, 1)     ; 1=nextmail
+                        WriteString(MBOX_USER_ID,20)    ; userid
+                        WriteString(OPPONENT_NICK,20) ;
+                        WriteString(OUT_MESSAGE,200)    ;
+                        ret               
+
+BuildOOurMsgRequest     ld (MBOX_CMD), a                ;
+                        ld de, REQUESTBUF               ; entire server request string
+                        WriteString(MBOX_PROTOCOL_BYTES, 2);
+                        WriteString(MBOX_CMD, 1)        ;
+                        WriteString(MBOX_APP_ID, 1)     ; 1=nextmail
+                        WriteString(MBOX_USER_ID,20)    ; userid
+                        WriteString(MBOX_NICK,20) ;
+                        WriteString(OUT_MESSAGE,200)    ;
+                        ret               
+
+; byte 1: move number
+;   0=no move yet
+;   1-9 move 1-9 
+;   10 finished
+; byte 2: our move? 
+;   1=yes 0=no
+; bytes 3-11: move history
+;   eg   900000000
+;   then 940000000
+;   then 942000000
+;   then 942100000 where number matches grid below
+;
+;       o|x|o    1|2|3  
+;      --+-+--  --+-+--
+;       o|x|x    4|5|6
+;      --+-+--  --+-+--
+;       x|x|o    7|8|9
+BuildOpponentMessage         proc
+                        ld hl, OUT_MESSAGE
+                        ld a, (MOVE_NUMBER)
+                        ld (hl), a
+                        inc hl
+                        ld a, 1
+                        ld (hl), a
+                        inc hl
+                        ld d,h
+                        ld e,l
+                        ld hl, MOVE_HISTORY
+                        ld b,0
+                        ld c,9
+                        ldir 
+                        ret
+pend
+
+BuildOurMessage         proc
+                        ld hl, OUT_MESSAGE
+                        ld a, (MOVE_NUMBER)
+                        ld (hl), a
+                        inc hl
+                        ld a, 0
+                        ld (hl), a
+                        inc hl
+                        ld d,h
+                        ld e,l
+                        ld hl, MOVE_HISTORY
+                        ld b,0
+                        ld c,9
+                        ldir 
+                        ret
+pend
 
 ;
 ; EXIT: carry set if won
@@ -312,13 +406,6 @@ CheckUniqueMove         proc
 pend
 
 ;
-;
-;
-SendMove                proc
-                        ret
-pend
-
-;
 ; ENTRY
 ;   A = 'o' or 'x'
 ; EXIT
@@ -350,6 +437,7 @@ MakeCross               ld a, 'x'
 ;
 ProcessMessage          ld hl, IN_MESSAGE               ; byte 1: move number
                         ld a, (hl)
+                        ld (MOVE_NUMBER), a
                         cp 10
                         jp z, NotFinished
                         ld a, 1                         ; finished!
@@ -818,6 +906,8 @@ MBOX_POOL_SIZE          defb 2
 MBOX_PROTOCOL_BYTES     defb $00, $01                   ;
 MBOX_USER_ID            defs 20                         ; the one used for transmission to allow the working buffer to be reset
 MOVE_HISTORY            defb 9
+MOVE_NUMBER             defb 1
+MOVE_POSITION           defb 1
 MOVE_TABLE              defb 2,4,6,9,11,13,16,18,20     ; offset from board for piece position
 MSG_ERR_SENDING         defb "Error sending message"    ;
 MSG_ERR_SENDING_LEN     equ $-MSG_ERR_SENDING           ;
